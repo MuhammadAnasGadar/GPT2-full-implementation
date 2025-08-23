@@ -39,7 +39,7 @@ class CausalSelfAttention(nn.Module):
         # att = att.masked_fill(self.bias[:,:,:T,:T] == 0, float('-inf'))
         # att = F.softmax(att, dim=-1)
         # y = att @ v # (B, nh, T, T) x (B, nh, T, hs) -> (B, nh, T, hs)
-        
+
         y = F.scaled_dot_product_attention(q, k, v, is_causal=True) # flash attention
         y = y.transpose(1, 2).contiguous().view(B, T, C) # re-assemble all head outputs side by side
         # output projection
@@ -242,7 +242,7 @@ train_loader = DataLoaderLite(B=16, T=1024)
 torch.set_float32_matmul_precision('high')
 
 # get logits
-model = GPT(GPTConfig())
+model = GPT(GPTConfig(vocab_size=50304))
 model.to(device)
 model = torch.compile(model)
 
