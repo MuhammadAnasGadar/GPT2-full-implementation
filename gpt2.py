@@ -256,7 +256,9 @@ class DataLoaderLite:
     
         if master_process:
             print(f"found {len(shards)} shards for split {split}")
+        self.reset()
 
+    def reset(self):
         # state, init at shard zero
         self.current_shard = 0
         self.tokens = load_tokens(self.shards[self.current_shard])
@@ -336,6 +338,7 @@ if master_process:
 
 
 train_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="train")
+val_loader = DataLoaderLite(B=B, T=T, process_rank=ddp_rank, num_processes=ddp_world_size, split="val")
 
 
 torch.set_float32_matmul_precision('high')
@@ -355,7 +358,7 @@ warmup_steps = 715
 max_steps = 19073
 
 def get_lr(it):
-    # 1) linear warmup for warmup_iters steps
+    # 1) linear warmup for warmup_iters steps 
     if it < warmup_steps:
         return max_lr * (it+1) / warmup_steps
     # 2) if it > lr_decay_iters, return min learning rate
@@ -374,6 +377,29 @@ optimizer = raw_model.configure_optimizers(weight_decay=0.1, learning_rate=6e-4,
 
 for step in range(max_steps):
     t0 = time.time()
+
+    # once in a while evaluate our validation loss
+    if step % 100 == 0:
+        model.eval()
+        val_loader.reset()
+        with torch.no_grad():
+            val_loss_accum = 0.0
+            val_loss_steps = 20
+            for _ in range(val_loss_steps):
+                x, y = val_loader.next_batch()
+                x, y = x.to(device), y.to(device)
+                with torch.autocast(device_type=device, dtype=torch.bfloat16):
+                    logits, loss = model(x, y)
+                loss = loss / val_loss_steps
+                val_loss_accum += loss.detach()
+        if ddp:
+            dist.all_reduce(val_loss_accum, op=dist.ReduceOp.AVG)
+        if master_process:
+            print(f"validation loss: {val_loss_accum.item():.4f}")
+
+    # training loop
+    model.train()
+
     # x, y = train_loader.next_batch()
     # x, y = x.to(device), y.to(device)
     optimizer.zero_grad()
