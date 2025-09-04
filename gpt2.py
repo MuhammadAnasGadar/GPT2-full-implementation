@@ -311,9 +311,9 @@ def get_most_likely_row(tokens, mask, logits):
 
 # attempt to autodetect the device
 # simple launch:
-# python train_gpt2.py
+# python gpt2.py
 # DDP launch for e.g. 8 GPUs:
-# torchrun --standalone --nproc_per_node=8 train_gpt2.py
+# torchrun --standalone --nproc_per_node=8 gpt2.py
 
 # run the training loop
 from torch.distributed import init_process_group, destroy_process_group
@@ -448,7 +448,10 @@ for step in range(max_steps):
                     'model': raw_model.state_dict(),
                     'config': raw_model.config,
                     'step': step,
-                    'val_loss': val_loss_accum.item()
+                    'val_loss': val_loss_accum.item(),
+                    'optimizer': optimizer.state_dict(),  # Save the optimizer state
+                    'rng_state': torch.get_rng_state(), # Save torch's RNG state
+                    'cuda_rng_state': torch.cuda.get_rng_state(), # Save CUDA's RNG state
                 }
                 # you might also want to add optimizer.state_dict() and
                 # rng seeds etc., if you wanted to more exactly resume training
