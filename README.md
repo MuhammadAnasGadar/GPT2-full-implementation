@@ -52,6 +52,89 @@ The implementation follows the original GPT-2 architecture with these key compon
 | GPT-2 Large | 774M | 36 | 20 | 1280 |
 | GPT-2 XL | 1558M | 48 | 25 | 1600 |
 
+
+## 🔧 Key Features
+
+### 1. **Distributed Training**
+- Supports DistributedDataParallel (DDP) for multi-GPU training
+- Automatic device detection (CUDA, MPS, CPU)
+- Gradient accumulation for large effective batch sizes
+- Learning rate scheduling with warmup and cosine decay
+
+### 2. **Data Loading**
+- Efficient sharded data loading from `edu_fineweb10B/`
+- Supports train/validation splits
+- Automatic shard rotation for continuous training
+- Memory-efficient token processing
+
+### 3. **Evaluation Framework**
+- **HellaSwag Evaluation**: Measures commonsense reasoning
+- **Completion-style Evaluation**: Treats multiple-choice as text completion
+- **Autoregressive Loss Calculation**: Evaluates model confidence
+
+### 4. **Text Generation**
+- **Top-k Sampling**: Configurable sampling strategy
+- **Temperature Control**: Adjustable randomness
+- **Batch Generation**: Generate multiple sequences simultaneously
+- **Autoregressive Generation**: Token-by-token generation
+
+## 📊 Training Configuration
+
+### Hyperparameters
+- **Batch Size**: 524,288 tokens (0.5M tokens per step)
+- **Sequence Length**: 1024 tokens
+- **Learning Rate**: 6e-4 with cosine decay
+- **Weight Decay**: 0.1
+- **Gradient Clipping**: 1.0
+- **Warmup Steps**: 715
+- **Total Steps**: 19,073 (~1 epoch on 10B tokens)
+
+### Optimization
+- **Optimizer**: AdamW with fused implementation
+- **Mixed Precision**: bfloat16 for training
+- **Gradient Accumulation**: Automatic based on batch size
+- **Learning Rate Schedule**: Linear warmup + cosine decay
+
+## 🧪 Evaluation Results
+
+### HellaSwag Performance
+The model is evaluated on HellaSwag, a commonsense reasoning benchmark:
+
+| Model | Accuracy (Completion Style) | Baseline (Multiple Choice) |
+|-------|----------------------------|---------------------------|
+| GPT-2 (124M) | 29.55% | 31.14% |
+| GPT-2 XL (1558M) | 48.93% | 50.89% |
+
+### Performance Comparison with GPT-3
+Remarkably, the 124M parameter GPT-2 model demonstrates performance that closely approaches GPT-3 levels on various evaluation and validation sets. 
+
+<!-- ### Training Metrics
+- **Validation Loss**: Monitored every 250 steps
+- **HellaSwag Accuracy**: Evaluated every 250 steps
+- **Text Generation**: Sample generation every 250 steps
+- **Checkpointing**: Model saved every 5000 steps -->
+
+## 🔍 Technical Details
+
+### 1. **Autoregressive Language Modeling**
+The model uses the standard next-token prediction objective:
+```
+P(x₁, x₂, ..., xₙ) = ∏ᵢ P(xᵢ | x₁, ..., xᵢ₋₁)
+```
+
+### 2. **Data Processing**
+- **Tokenization**: GPT-2 BPE tokenizer via `tiktoken`
+- **Sharding**: 100M tokens per shard for efficient loading
+- **Memory Management**: uint16 storage for token indices
+- **Document Separation**: `<|endoftext|>` token delimiters
+
+### 3. **Model Architecture Details**
+- **Position Embeddings**: Learnable position embeddings
+- **Layer Normalization**: Pre-norm architecture
+- **Weight Sharing**: Input embeddings = output projection weights
+- **Initialization**: Proper weight initialization following GPT-2 paper
+
+
 ## 📁 File Structure
 
 ```
@@ -61,7 +144,7 @@ Build-gpt-2/
 ├── hellaswag.py           # HellaSwag evaluation framework
 ├── fineweb.py             # FineWeb-Edu dataset processing
 ├── fineweb.ipynb          # Jupyter notebook for data processing
-├── play.ipynb             # Interactive notebook for experimentation
+├── analysis.ipynb             # Interactive notebook for experimentation
 ├── input.txt              # Sample text data (TinyShakespeare)
 ├── edu_fineweb10B/        # Processed dataset directory
 ├── hellaswag/             # HellaSwag evaluation data
@@ -127,98 +210,10 @@ model = GPT.from_pretrained("gpt2")  # Load GPT-2 (124M)
 python hellaswag.py -m gpt2 -d cuda
 ```
 
-## 🔧 Key Features
-
-### 1. **Distributed Training**
-- Supports DistributedDataParallel (DDP) for multi-GPU training
-- Automatic device detection (CUDA, MPS, CPU)
-- Gradient accumulation for large effective batch sizes
-- Learning rate scheduling with warmup and cosine decay
-
-### 2. **Data Loading**
-- Efficient sharded data loading from `edu_fineweb10B/`
-- Supports train/validation splits
-- Automatic shard rotation for continuous training
-- Memory-efficient token processing
-
-### 3. **Evaluation Framework**
-- **HellaSwag Evaluation**: Measures commonsense reasoning
-- **Completion-style Evaluation**: Treats multiple-choice as text completion
-- **Autoregressive Loss Calculation**: Evaluates model confidence
-- **Distributed Evaluation**: Supports multi-GPU evaluation
-
-### 4. **Text Generation**
-- **Top-k Sampling**: Configurable sampling strategy
-- **Temperature Control**: Adjustable randomness
-- **Batch Generation**: Generate multiple sequences simultaneously
-- **Autoregressive Generation**: Token-by-token generation
-
-## 📊 Training Configuration
-
-### Hyperparameters
-- **Batch Size**: 524,288 tokens (0.5M tokens per step)
-- **Sequence Length**: 1024 tokens
-- **Learning Rate**: 6e-4 with cosine decay
-- **Weight Decay**: 0.1
-- **Gradient Clipping**: 1.0
-- **Warmup Steps**: 715
-- **Total Steps**: 19,073 (~1 epoch on 10B tokens)
-
-### Optimization
-- **Optimizer**: AdamW with fused implementation
-- **Mixed Precision**: bfloat16 for training
-- **Gradient Accumulation**: Automatic based on batch size
-- **Learning Rate Schedule**: Linear warmup + cosine decay
-
-## 🧪 Evaluation Results
-
-### HellaSwag Performance
-The model is evaluated on HellaSwag, a commonsense reasoning benchmark:
-
-| Model | Accuracy (Completion Style) | Baseline (Multiple Choice) |
-|-------|----------------------------|---------------------------|
-| GPT-2 (124M) | 29.55% | 31.14% |
-| GPT-2 XL (1558M) | 48.93% | 50.89% |
-
-### Performance Comparison with GPT-3
-Remarkably, the 124M parameter GPT-2 model demonstrates performance that closely approaches GPT-3 levels on various evaluation and validation sets. 
-
-### Training Metrics
-- **Validation Loss**: Monitored every 250 steps
-- **HellaSwag Accuracy**: Evaluated every 250 steps
-- **Text Generation**: Sample generation every 250 steps
-- **Checkpointing**: Model saved every 5000 steps
-
-## 🔍 Technical Details
-
-### 1. **Autoregressive Language Modeling**
-The model uses the standard next-token prediction objective:
-```
-P(x₁, x₂, ..., xₙ) = ∏ᵢ P(xᵢ | x₁, ..., xᵢ₋₁)
-```
-
-### 2. **Data Processing**
-- **Tokenization**: GPT-2 BPE tokenizer via `tiktoken`
-- **Sharding**: 100M tokens per shard for efficient loading
-- **Memory Management**: uint16 storage for token indices
-- **Document Separation**: `<|endoftext|>` token delimiters
-
-### 3. **Model Architecture Details**
-- **Position Embeddings**: Learnable position embeddings
-- **Layer Normalization**: Pre-norm architecture
-- **Weight Sharing**: Input embeddings = output projection weights
-- **Initialization**: Proper weight initialization following GPT-2 paper
-
-### 4. **HellaSwag Evaluation**
-- Converts multiple-choice to completion task
-- Uses autoregressive loss for ranking completions
-- Implements length-normalized scoring
-- Supports distributed evaluation across GPUs
-
 
 ## 🎮 Interactive Notebooks
 
-### `play.ipynb`
+### `analysis.ipynb`
 Interactive notebook for:
 - Model weight visualization
 - Text generation experiments
@@ -259,7 +254,7 @@ for step in range(max_steps):
     optimizer.step()
 ```
 
-## 🐛 Troubleshooting
+<!-- ## 🐛 Troubleshooting
 
 ### Common Issues
 
@@ -276,7 +271,7 @@ for step in range(max_steps):
 3. **Data Loading Issues**
    - Ensure `edu_fineweb10B/` directory exists
    - Run `python fineweb.py` to process data
-   - Check file permissions
+   - Check file permissions -->
 
 ## 📚 References
 
@@ -287,6 +282,4 @@ for step in range(max_steps):
 
 ## 📄 License
 
-This project is for educational purposes. Please refer to the original GPT-2 license for commercial use.
-
-
+MIT License
