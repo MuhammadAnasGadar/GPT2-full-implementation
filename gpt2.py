@@ -357,7 +357,7 @@ if torch.cuda.is_available():
 enc = tiktoken.get_encoding("gpt2")
 
 total_batch_size = 524288 # 2**19, ~0.5M, in number of tokens
-B = 64 # micro batch size
+B = 32 # micro batch size
 T = 1024 # sequence length
 assert total_batch_size % (B * T * ddp_world_size) == 0, "make sure total_batch_size is divisible by B * T * ddp_world_size"
 grad_accum_steps = total_batch_size // (B * T * ddp_world_size)
@@ -389,7 +389,7 @@ raw_model = model.module if ddp else model # always contains the "raw" unwrapped
 max_lr = 6e-4
 min_lr = max_lr * 0.1
 warmup_steps = 715
-max_steps = 19073 # 19,073 steps is ~1 epoch, if data is 10B tokens and batch size 0.5M tokens
+max_steps = 19073 * 3 # 19,073 steps is ~1 epoch, if data is 10B tokens and batch size 0.5M tokens
 
 def get_lr(it):
     # 1) linear warmup for warmup_iters steps 
@@ -414,7 +414,13 @@ os.makedirs(log_dir, exist_ok=True)
 log_file = os.path.join(log_dir, f"log.txt")
 with open(log_file, "w") as f: # open for writing to clear the file
     pass
+log_sample_file = os.path.join(log_dir, f"log_sample_outputs.txt")
+with open(log_sample_file, "w") as f: # open for writing to clear the file
+    pass
 
+num_return_sequences = 2
+num_log_sequences = 2
+max_length = 32
 
 for step in range(max_steps):
     t0 = time.time()
@@ -491,10 +497,8 @@ for step in range(max_steps):
                 f.write(f"{step} hella {acc_norm:.4f}\n")
 
     # once in a while generate from the model (except step 0, which is noise)
-    if ((step > 0 and step % 250 == 0) or last_step) and (not use_compile):
+    if ((step % 100 == 0) or last_step) and (not use_compile):
         model.eval()
-        num_return_sequences = 4
-        max_length = 32
         tokens = enc.encode("Hello, I'm a language model,")
         tokens = torch.tensor(tokens, dtype=torch.long)
         tokens = tokens.unsqueeze(0).repeat(num_return_sequences, 1)
@@ -521,11 +525,22 @@ for step in range(max_steps):
                 # append to the sequence
                 xgen = torch.cat((xgen, xcol), dim=1)
 
-        # print the generated text
-        for i in range(num_return_sequences):
-            tokens = xgen[i, :max_length].tolist()
-            decoded = enc.decode(tokens)
-            print(f"rank {ddp_rank} sample {i}: {decoded}")
+        # # print the generated text
+        # for i in range(num_return_sequences):
+        #     tokens = xgen[i, :max_length].tolist()
+        #     decoded = enc.decode(tokens)
+        #     print(f"rank {ddp_rank} sample {i}: {decoded}")
+
+        with open(log_sample_file, "a") as f_sample:
+            f_sample.write(f"Step {step}: \n")
+
+            for i in range(num_log_sequences):
+                tokens = xgen[i, :max_length].tolist()
+                decoded = enc.decode(tokens)
+                print(f"rank {ddp_rank} sample {i}: {decoded}")
+                # f_sample.write(f"Step {step}: {decoded}\n")
+                f_sample.write(f"Sample {i}: {decoded}\n")
+            f_sample.write("\n")
 
     # do one step of the optimization
     model.train()
